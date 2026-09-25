@@ -1,0 +1,16 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 调试工具产出的临时文件 ----
+*.png
+*.log
+songs/_*.txt
+
+# ---- 编辑器 ----
+.vscode/
+.idea/
+*.swp
