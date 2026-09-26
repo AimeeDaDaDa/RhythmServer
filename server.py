@@ -18,7 +18,7 @@ import os
 import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 
 import engine
 
@@ -26,10 +26,23 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SONGS_DIR = os.path.join(BASE_DIR, 'songs')
 PORT = 8321
 
-LANE_KEYS = ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',']   # 轨道 0..7
+LANE_KEYS = ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',']   # 三角洲行动：轨道 0..7（中音 + 高音1）
 
-# 允许上传的 id 字符集（防路径穿越/注入）
-_SAFE_ID = re.compile(r'^[A-Za-z0-9\u4e00-\u9fff _\-\.]{1,120}$')
+# 永劫无间：琴谱直接用字母书写，无鼠标修饰键
+#   高音 Q W E R T Y U ／ 中音 A S D F G H J ／ 低音 C V B N M
+NARAKA_MAP = {}
+for _i, _k in enumerate('qwertyu'):
+    NARAKA_MAP[_k] = (_i, "'")      # 高音
+for _i, _k in enumerate('asdfghj'):
+    NARAKA_MAP[_k] = (_i, '')       # 中音
+for _i, _k in enumerate('cvbnm'):
+    NARAKA_MAP[_k] = (_i, '_')      # 低音
+
+GAMES = ('delta', 'naraka')
+
+# 允许上传的 id 字符集（防路径穿越/注入）；含常见中文标点：· 、 —— 等
+_SAFE_ID = re.compile(r'^[A-Za-z0-9\u4e00-\u9fff\u00b7\u3001\u2014\u2018\u2019\u201c\u201d'
+                      r' _\-\.\(\)\[\]]{1,120}$')
 
 
 def ensure_songs_dir():
@@ -61,14 +74,16 @@ def list_songs():
             score = engine.load_score_file(base + '.txt')
             title = score.get('title') or stem
             bpm, notes = score['bpm'], score['note_count']
+            game = score.get('game') or 'delta'
         except Exception:
-            title, bpm, notes = stem, None, None
+            title, bpm, notes, game = stem, None, None, 'delta'
         has_midi = os.path.exists(base + '.mid') or os.path.exists(base + '.midi')
         out.append({
             'id': stem,
             'title': meta.get('title') or title,
             'bpm': bpm,
             'notes': notes,
+            'game': game,
             'has_midi': has_midi,
             'updated': int(meta.get('updated') or os.path.getmtime(base + '.txt')),
         })
@@ -83,17 +98,29 @@ def find_song(sid):
     return p if os.path.exists(p) else None
 
 
-def pair_events(score):
+def pair_events(score, game='delta'):
     """把 down/up 事件配对成音符 → [(lane, start_sec, dur_sec, mod)]
-    key 形如 'z' / "z'" 高音 / 'z_' 低音 / '#z' 半音（修饰键按 (lane, mod) 分别配对）"""
+
+    delta ：key 形如 'z' / "z'" 高音 / 'z_' 低音 / '#z' 半音（鼠标修饰键按 (lane, mod) 分别配对）
+    naraka：key 为游戏原生字母 q w e r t y u / a s d f g h j / c v b n m，无鼠标修饰键
+    """
     bpm = score['bpm'] or 120.0
     spb = 60.0 / bpm
     pending, notes = {}, []
     for beat, kind, key in score['events']:
-        if not key or key[0] not in LANE_KEYS:
+        if not key:
             continue
-        lane = LANE_KEYS.index(key[0])
-        mod = key[1:]
+        base, mod = key[0], key[1:]
+        if game == 'naraka':
+            if base not in NARAKA_MAP:
+                continue
+            lane, builtin_mod = NARAKA_MAP[base]
+            mod = mod or builtin_mod          # 高/低音由键位本身决定
+        else:
+            if base not in LANE_KEYS:
+                continue
+            lane = LANE_KEYS.index(base)
+
         ident = (lane, mod)
         if kind == 1:
             pending.setdefault(ident, []).append(beat)
@@ -107,17 +134,19 @@ def pair_events(score):
     return notes
 
 
-def chart_json(score, sid):
-    notes = pair_events(score)
+def chart_json(score, sid, game='delta'):
+    notes = pair_events(score, game)
     length = notes[-1][1] + notes[-1][2] if notes else 0.0
     out = []
     for lane, t, dur, mod in notes:
         item = {'lane': lane, 't': round(t, 3), 'dur': round(dur, 3)}
         if mod:
-            item['mod'] = mod          # ' 高音(右键) / _ 低音(左键) / # 半音(中键)
+            item['mod'] = mod          # ' 高音 / _ 低音 / # 半音（naraka 由键位决定音区）
         out.append(item)
+    labels = (['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'Q'] if game == 'naraka'
+              else [k.upper() if k != ',' else ',' for k in LANE_KEYS])
     return {'id': sid, 'title': score.get('title') or sid, 'bpm': score['bpm'],
-            'keys': [k.upper() if k != ',' else ',' for k in LANE_KEYS],
+            'game': game, 'keys': labels,
             'length': round(length, 3), 'note_count': len(notes),
             'notes': out}
 
@@ -187,7 +216,12 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):
-        path = self._decode_path(urlparse(self.path).path)
+        parsed = urlparse(self.path)
+        path = self._decode_path(parsed.path)
+        query = parse_qs(parsed.query)
+        game = (query.get('game', [''])[0] or '').lower()
+        if game not in GAMES:
+            game = ''                      # 未指定则用谱面内 @game，再退回 delta
         try:
             if path == '/api/songs':
                 self._json(200, list_songs())
@@ -199,7 +233,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(404, {'error': '歌曲不存在'})
                     return
                 try:
-                    self._json(200, chart_json(engine.load_score_file(p), m.group(1)))
+                    sc = engine.load_score_file(p)
+                    g = game or (sc.get('game') or 'delta')
+                    self._json(200, chart_json(sc, m.group(1), g))
                 except Exception as e:
                     self._json(500, {'error': f'谱面解析失败：{e}'})
                 return

@@ -240,10 +240,13 @@ def main():
     subprocess.run(['taskkill', '/F', '/IM', 'RhythmClient.exe'], capture_output=True)
     time.sleep(1)
 
-    # 任意窗口模式，让按键能进测试窗口
+    # 任意窗口模式 + 指定游戏（可用 argv[2] 传 naraka 测永劫无间）
+    game = sys.argv[2] if len(sys.argv) > 2 else 'delta'
     os.makedirs(APPDATA, exist_ok=True)
     with open(os.path.join(APPDATA, 'settings.json'), 'w', encoding='utf-8') as f:
-        json.dump({'WindowKeyword': '三角洲', 'GameOnly': False}, f)
+        json.dump({'WindowKeyword': '三角洲' if game == 'delta' else '永劫',
+                   'GameOnly': False, 'GameId': game}, f)
+    print(f'settings: GameOnly=false（任意窗口模式） game={game}')
 
     subprocess.Popen([APP])
     time.sleep(4)
@@ -280,7 +283,7 @@ def main():
     print(f'输入框收到 {len(text)} 个字符')
     print(f'内容预览: {text[:120]!r}')
     from collections import Counter
-    c = Counter(ch.upper() for ch in text if ch.upper() in 'ZXCVBNM,')
+    c = Counter(ch.upper() for ch in text if ch.upper() in 'ZXCVBNM,ASDFGHJQWERTYU')
     print(f'按键分布: {dict(c)}')
     print(f"鼠标修饰键按下次数(输入框): 左键(低音)={EDIT_STATS['L']} "
           f"右键(高音)={EDIT_STATS['R']} 中键(半音)={EDIT_STATS['M']}")

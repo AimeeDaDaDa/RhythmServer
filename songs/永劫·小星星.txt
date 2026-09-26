@@ -1,0 +1,7 @@
+@title 永劫·小星星
+@game naraka
+@bpm 100
+// 中音一行即可弹完：A S D F G H J = 1 2 3 4 5 6 7
+A A G G H H G*2 | F F D D S S A*2 |
+G G F F D D S*2 | G G F F D D S*2 |
+A A G G H H G*2 | F F D D S S A*2

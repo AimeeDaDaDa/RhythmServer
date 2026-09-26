@@ -188,7 +188,7 @@ def parse_score(text, keymap=None):
     events: [(beat, kind, key)]，kind: 1=按下 0=抬起，按节拍排序。
     """
     km = dict(DEFAULT_KEYMAP) if keymap is None else dict(keymap)
-    bpm, title = 120.0, ''
+    bpm, title, game = 120.0, '', ''
     notes, beat, errors = [], 0.0, []
     for lineno, raw in enumerate(text.splitlines(), 1):
         line = raw.split('//', 1)[0]
@@ -205,6 +205,8 @@ def parse_score(text, keymap=None):
                             errors.append(f"第{lineno}行：@bpm 无效")
                     elif name == 'title':
                         title = val
+                    elif name == 'game':
+                        game = val.lower()          # delta / naraka
                 continue
             dm = _DUR.match(tok)
             if dm is None:
@@ -217,6 +219,8 @@ def parse_score(text, keymap=None):
                 continue
             if base == '0':
                 beat += dur
+                continue
+            if base.strip("#'_") == '':      # 只残留修饰符（旧版 # 注释等）→ 忽略
                 continue
             try:
                 if base.startswith('['):
@@ -254,7 +258,7 @@ def parse_score(text, keymap=None):
             events.append((s + d, 0, k))
     events.sort(key=lambda e: (e[0], e[1]))
     total = max([s + d for lst in per_key.values() for s, d in lst] + [beat])
-    return {'title': title, 'bpm': bpm, 'events': events,
+    return {'title': title, 'bpm': bpm, 'game': game, 'events': events,
             'length_beats': total,
             'note_count': sum(len(ks) for _, ks, _ in notes)}
 

@@ -1,0 +1,8 @@
+@title 永劫·花海（片段）
+@game naraka
+@bpm 80
+// 永劫无间琴谱：直接用字母书写
+// 高音 Q W E R T Y U ／ 中音 A S D F G H J ／ 低音 C V B N M
+F G H Q Q | H G F G F F G H E R | R E R E Q W F G H Q Q |
+H G F G F F G H Q F | F F D S D F F H H | H G F G H F H H |
+H G Q F F J J | H G F S H F H | F H G | F H H 0 0
